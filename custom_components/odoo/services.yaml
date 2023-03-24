@@ -1,0 +1,11 @@
+create_orders:
+  name: Create orders
+  description: Create new orders in Field Service add-on
+  fields:
+    name:
+      description: 
+      name: Sensor's name
+      required: true
+      example: "water_leak"
+      selector:
+        text:

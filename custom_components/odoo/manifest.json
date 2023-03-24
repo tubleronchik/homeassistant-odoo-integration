@@ -1,0 +1,12 @@
+{
+    "domain": "odoo",
+    "name": "Odoo",
+    "codeowners": ["@airalab"],
+    "config_flow": true,
+    "dependencies": [],
+    "documentation": "",
+    "iot_class": "cloud_polling",
+    "issue_tracker": "",
+    "requirements": [],
+    "version": "0.0.1"
+  }

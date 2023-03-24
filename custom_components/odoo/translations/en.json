@@ -1,0 +1,16 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "data": {
+                    "db_name": "Name of the database to connect",
+                    "odoo_host": "Odoo host",
+                    "odoo_port": "Odoo port",
+                    "odoo_username": "Oddo user's name",
+                    "user_password": "Odoo user's password or API key"
+                },
+                "description": "Please enter your Odoo credentials."
+            }
+        }
+    }
+}
