@@ -21,8 +21,11 @@ def to_thread(func: tp.Callable) -> tp.Coroutine:
 
 
 @to_thread
-def connect_to_db(entry: ConfigEntry) -> tuple() | None:
-    url = f"{entry.data[HOST]}:{entry.data[PORT]}"
+def connect_to_db(entry: ConfigEntry) -> tp.Optional[tuple]:
+    host = entry.data[HOST]
+    if host[-1] == "/":
+        host = host[:-1]
+    url = f"{host}:{entry.data[PORT]}"
     try:
         common = xmlrpc.client.ServerProxy("{}/xmlrpc/2/common".format(url), allow_none=1)
         uid = common.authenticate(entry.data[DB], entry.data[USERNAME], entry.data[PASSWORD], {})
@@ -57,7 +60,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         location_id = 2
         todo = "some job"
         worker_id = 6
-        priority = 3
+        priority = "3"
         scheduled_date_start = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         scheduled_duration = 1.0
         order_id = connection.execute_kw(
@@ -81,6 +84,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return order_id
 
     hass.services.async_register(DOMAIN, CREATE_ORDERS_SERVICE, handle_create_order)
+    return True
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:

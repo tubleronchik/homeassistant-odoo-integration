@@ -1,4 +1,5 @@
 import voluptuous as vol
+import typing as tp
 from .const import DB, HOST, PORT, USERNAME, PASSWORD, DOMAIN
 
 from homeassistant import config_entries
@@ -22,7 +23,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_user(self, user_input: tp.Optional[dict] = None) -> FlowResult:
         """Handle the initial step of the configuration. Contains user's warnings.
         :param user_input: Dict with the keys from STEP_USER_DATA_SCHEMA and values provided by user
         :return: Service functions from HomeAssistant
