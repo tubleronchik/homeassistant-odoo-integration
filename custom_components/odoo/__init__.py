@@ -9,6 +9,10 @@ from .pubsub import subscribe_response_topic, parse_income_message
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -131,6 +135,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def _check_result() -> None:
         pass
 
+    def _callback_state_change(event):
+        """Callback for sensor's state changing. Calls `create_order` service.
+        :param event: Home Assistant event.
+        """
+        sensor_id = event.data.get("entity_id")
+        entity_registry = er.async_get(hass)
+        entity = entity_registry.entities[sensor_id]
+        sensor_type = entity["original_device_class"]
+        sensor_name = entity["name"]
+        _LOGGER.debug(f"new event: {event}")
+
+    await asyncio.sleep(60)
+    entity_registry = er.async_get(hass)
+    sensors_types_to_track = ["moisture", "gas"]  # types of the sensors which will be tracked to create orders
+    sensors_ids_to_track = []
+    for entity in entity_registry.entities:
+        entity_data = entity_registry.async_get(entity)
+        id = entity_data.entity_id
+        entity_state = hass.states.get(entity)
+        if entity_state != None:
+            try:
+                sensor_type = str(entity_state.attributes.get("device_class"))
+                if sensor_type in sensors_types_to_track:
+                    if "friendly_name" in entity_state.attributes:
+                        sensor_name = str(entity_state.attributes.get("friendly_name"))
+                    else:
+                        sensor_name = str(entity_state.attributes.get("device_class"))
+                    entity_data = entity_registry.async_get(entity)
+                    id = entity_data.device_id
+                    sensors_ids_to_track.append(id)
+            except:
+                pass
+    _LOGGER.debug(sensors_ids_to_track)
+    async_track_state_change_event(hass, sensors_ids_to_track, _callback_state_change)
     hass.services.async_register(DOMAIN, CREATE_ORDERS_SERVICE, handle_create_order)
     return True
 
