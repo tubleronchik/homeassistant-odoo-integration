@@ -56,13 +56,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def handle_create_order(call: ServiceCall) -> None:
         """Callback for create_order service"""
-        
+
         name = call.data["name"]
         order_id = await _create_order(name)
         topic = f"odoo_change_order_stage_{order_id}"
-        resp_sub = asyncio.ensure_future(
-            subscribe_response_topic(topic, _subscribe_callback)
-        )
 
         def _subscribe_callback(obj, update_nr, subscription_id) -> bool:
             """PubSub subscription callback function to execute at new message arrival. Call function to check
@@ -81,6 +78,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 hass.async_create_task(_check_result())
                 hass.async_create_task(_change_stage(str(order_id), str(precompleted_stage_id)))
                 return True
+
+        resp_sub = asyncio.ensure_future(subscribe_response_topic(topic, _subscribe_callback))
 
     @to_thread
     def _create_order(name: str) -> int:
