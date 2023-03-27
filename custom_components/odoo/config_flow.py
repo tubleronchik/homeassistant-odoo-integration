@@ -11,7 +11,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(DB): str,
         vol.Required(HOST): str,
-        vol.Required(PORT, default=80): int,
+        vol.Required(PORT, default=8069): int,
         vol.Required(USERNAME): str,
         vol.Required(PASSWORD): str,
     }

@@ -7,9 +7,10 @@ import logging
 from ast import literal_eval
 from robonomicsinterface import Account, PubSub
 
-from .const import ROBONOMICS_NODE_MULTIADDR
+from .const import ROBONOMICS_NODE_MULTIADDR, ROBONOMICS_NODE
 
 _LOGGER = logging.getLogger(__name__)
+
 
 def to_thread(func: tp.Callable) -> tp.Coroutine:
     @functools.wraps(func)
@@ -17,6 +18,7 @@ def to_thread(func: tp.Callable) -> tp.Coroutine:
         return await asyncio.to_thread(func, *args, **kwargs)
 
     return wrapper
+
 
 def parse_income_message(raw_data: tp.List[tp.Any]) -> dict:
     """
@@ -32,6 +34,7 @@ def parse_income_message(raw_data: tp.List[tp.Any]) -> dict:
 
     return data_dict
 
+
 @to_thread
 def subscribe_response_topic(response_topic, callback):
     """
@@ -39,7 +42,7 @@ def subscribe_response_topic(response_topic, callback):
     :param response_topic: Topic in PubSub to subscribe to.
     :param callback: Callback function to execute when new message registered.
     """
-    account_ = Account()
+    account_ = Account(remote_ws=ROBONOMICS_NODE)
     pubsub_ = PubSub(account_)
     _LOGGER.debug(f"Subscribing to topic '{response_topic}'")
     pubsub_.subscribe(response_topic, result_handler=callback)

@@ -77,13 +77,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             """
 
             message = parse_income_message(obj["params"]["result"]["data"])
+            _LOGGER.debug(f"Got msg from topic: {message}")
             id, stage_name = list(message.items())[0]
+            _LOGGER.debug(f"Order id: {id}")
             if str(order_id) == str(id):  # TODO check the name of the stage. Check result
+                _LOGGER.debug(f"in if")
                 hass.async_create_task(_check_result())
-                hass.async_create_task(_change_stage(str(order_id), str(precompleted_stage_id)))
+                hass.async_create_task(_change_stage(int(order_id), int(precompleted_stage_id)))
                 return True
 
         resp_sub = asyncio.ensure_future(subscribe_response_topic(topic, _subscribe_callback))
+        _LOGGER.debug(f"After subsciber")
 
     @to_thread
     def _create_order(name: str) -> int:
@@ -120,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return order_id
 
     @to_thread
-    def _change_stage(order_id: str, stage_id: str) -> int:
+    def _change_stage(order_id: int, stage_id: int) -> int:
         """Change stage of the order to `Pre Completed` in Fieldservice addon in Odoo.
 
         :param order_id: The order id.
@@ -128,8 +132,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """
 
         connection.execute_kw(
-            entry.data[DB], uid, entry.data[PASSWORD], "fsm.order", "write", [[int(order_id)], {"stage_id": stage_id}]
+            entry.data[DB], uid, entry.data[PASSWORD], "fsm.order", "write", [[order_id], {"stage_id": stage_id}]
         )
+        _LOGGER.debug(f"Stage for order {order_id} is updated")
 
     @to_thread
     def _check_result() -> None:
@@ -153,6 +158,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for entity in entity_registry.entities:
         entity_data = entity_registry.async_get(entity)
         id = entity_data.entity_id
+        # _LOGGER.debug(f"device class: {entity_registry.entities[id]}")
+        # _LOGGER.debug(f"device class: {entity_registry.entities[id].device_class}")
         entity_state = hass.states.get(entity)
         if entity_state != None:
             try:
