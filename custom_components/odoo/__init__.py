@@ -87,7 +87,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 return True
 
         resp_sub = asyncio.ensure_future(subscribe_response_topic(topic, _subscribe_callback))
-        _LOGGER.debug(f"After subsciber")
 
     @to_thread
     def _create_order(name: str) -> int:
@@ -145,11 +144,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         :param event: Home Assistant event.
         """
         sensor_id = event.data.get("entity_id")
-        entity_registry = er.async_get(hass)
-        entity = entity_registry.entities[sensor_id]
-        sensor_type = entity["original_device_class"]
-        sensor_name = entity["name"]
-        _LOGGER.debug(f"new event: {event}")
+        new_state = event.data.get("new_state").state
+        _LOGGER.debug(new_state)
+        if new_state == "on":
+            entity_registry = er.async_get(hass)
+            entity = entity_registry.entities[sensor_id]
+            sensor_type = entity.original_device_class
+            sensor_name = entity.name
+            _LOGGER.debug(f"Name of the sensors: {sensor_name}, type: {sensor_type}, id {sensor_id}")
+            hass.async_create_task(
+                hass.services.async_call(
+                    DOMAIN, CREATE_ORDERS_SERVICE, service_data={"name": f"{sensor_type} by {sensor_name}"}
+                )
+            )
 
     await asyncio.sleep(60)
     entity_registry = er.async_get(hass)
@@ -159,7 +166,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entity_data = entity_registry.async_get(entity)
         id = entity_data.entity_id
         # _LOGGER.debug(f"device class: {entity_registry.entities[id]}")
-        # _LOGGER.debug(f"device class: {entity_registry.entities[id].device_class}")
+        #  _LOGGER.debug(f"device class: {entity_registry.entities[id].device_class}")
         entity_state = hass.states.get(entity)
         if entity_state != None:
             try:
@@ -170,11 +177,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     else:
                         sensor_name = str(entity_state.attributes.get("device_class"))
                     entity_data = entity_registry.async_get(entity)
-                    id = entity_data.device_id
+                    id = entity_data.entity_id
                     sensors_ids_to_track.append(id)
-            except:
+            except Exception as e:
+                _LOGGER.error(f"Could not get entities with error: {e}")
                 pass
-    _LOGGER.debug(sensors_ids_to_track)
+    _LOGGER.debug(f"Sensors ids for tracking: {sensors_ids_to_track}")
     async_track_state_change_event(hass, sensors_ids_to_track, _callback_state_change)
     hass.services.async_register(DOMAIN, CREATE_ORDERS_SERVICE, handle_create_order)
     return True
