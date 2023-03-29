@@ -9,3 +9,10 @@ create_orders:
       example: "water_leak"
       selector:
         text:
+    sensor_id:
+      description: 
+      name: Service variable
+      required: false
+      example: ""
+      selector:
+        text:

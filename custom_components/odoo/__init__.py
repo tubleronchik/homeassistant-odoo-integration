@@ -2,6 +2,7 @@ import asyncio
 import functools
 import xmlrpc.client
 import typing as tp
+import time
 import logging
 from datetime import datetime
 from .const import DOMAIN, CREATE_ORDERS_SERVICE, DB, HOST, PORT, USERNAME, PASSWORD
@@ -56,7 +57,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     :return: True after succesfull setting up
     """
     connection, uid = await connect_to_db(entry)
-    approve_stage_id = 4
+    onapprove_stage_id = 4
+    approved_stage_id = 8
 
     async def handle_create_order(call: ServiceCall) -> None:
         """Callback for create_order service"""
@@ -65,8 +67,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug(f"Name from service: {name}")
         order_id = await _create_order(name)
         topic = f"odoo_change_order_stage_{order_id}"
+        sensor_id = call.data["sensor_id"]
+        _LOGGER.debug(f"Sensor id in handle create order: {sensor_id}")
 
-        def _subscribe_callback(obj, update_nr, subscription_id) -> bool:
+        def _pubsub_callback(obj, update_nr, subscription_id) -> bool:
             """PubSub subscription callback function to execute at new message arrival. Call function to check
             if the order is completed. If it is, change the order status to `pre-completed`.
 
@@ -81,13 +85,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug(f"Got msg from topic: {message}")
             id, stage_name = list(message.items())[0]
             _LOGGER.debug(f"Order id: {id}")
-            if str(order_id) == str(id):  # TODO check the name of the stage. Check result
-                _LOGGER.debug(f"in if")
-                hass.async_create_task(_check_result())
-                hass.async_create_task(_change_stage(int(order_id), int(approve_stage_id)))
-                return True
+            _LOGGER.debug(f"Stage name: {stage_name}")
+            if (str(order_id) == str(id)) and (stage_name == "Completed"):
+                hass.async_create_task(_change_stage(int(order_id), int(onapprove_stage_id)))
+                if _check_result(sensor_id):
+                    hass.async_create_task(_change_stage(int(order_id), int(approved_stage_id)))
+                    return True
 
-        resp_sub = asyncio.ensure_future(subscribe_response_topic(topic, _subscribe_callback))
+        resp_sub = asyncio.ensure_future(subscribe_response_topic(topic, _pubsub_callback))
 
     @to_thread
     def _create_order(name: str) -> int:
@@ -98,6 +103,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """
 
         location_id = 1
+        timestamp = time.strftime("%d.%m.%Y, %H:%M", time.localtime())
         todo = "some job"
         worker_id = 1
         priority = "3"
@@ -115,7 +121,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "todo": todo,
                     "person_id": worker_id,
                     "priority": priority,
-                    "name": name,
+                    "name": f"{name} {timestamp}",
                     "scheduled_date_start": scheduled_date_start,
                     "scheduled_duration": scheduled_duration,
                 }
@@ -128,7 +134,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Change stage of the order to `Pre Completed` in Fieldservice addon in Odoo.
 
         :param order_id: The order id.
-        :param stage_id: The `Pre Completed` stage id.
+        :param stage_id: New stage id.
         """
 
         connection.execute_kw(
@@ -136,9 +142,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         _LOGGER.debug(f"Stage for order {order_id} is updated")
 
-    @to_thread
-    def _check_result() -> None:
-        pass
+    def _check_result(sensor_id: str) -> bool:
+        sensor_state = hass.states.get(sensor_id).state
+        _LOGGER.debug(f"Sensor state on Completed stage: {sensor_state}")
+        time.sleep(10)
+        return sensor_state == "off"
 
     def _callback_state_change(event):
         """Callback for sensor's state changing. Calls `create_order` service.
@@ -146,16 +154,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """
         sensor_id = event.data.get("entity_id")
         new_state = event.data.get("new_state").state
-        _LOGGER.debug(new_state)
+        _LOGGER.debug(f"New state of the sensor: {new_state}")
         if new_state == "on":
-            entity_registry = er.async_get(hass)
             entity = entity_registry.entities[sensor_id]
             sensor_type = entity.original_device_class
             sensor_name = entity.name
             _LOGGER.debug(f"Name of the sensors: {sensor_name}, type: {sensor_type}, id {sensor_id}")
             hass.async_create_task(
                 hass.services.async_call(
-                    DOMAIN, CREATE_ORDERS_SERVICE, service_data={"name": f"{sensor_type} by {sensor_name}"}
+                    DOMAIN,
+                    CREATE_ORDERS_SERVICE,
+                    service_data={"name": f"{sensor_type} by {sensor_name}", "sensor_id": sensor_id},
                 )
             )
 
