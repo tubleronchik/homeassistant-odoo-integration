@@ -56,12 +56,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     :return: True after succesfull setting up
     """
     connection, uid = await connect_to_db(entry)
-    precompleted_stage_id = 18
+    approve_stage_id = 4
 
     async def handle_create_order(call: ServiceCall) -> None:
         """Callback for create_order service"""
 
         name = call.data["name"]
+        _LOGGER.debug(f"Name from service: {name}")
         order_id = await _create_order(name)
         topic = f"odoo_change_order_stage_{order_id}"
 
@@ -83,7 +84,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if str(order_id) == str(id):  # TODO check the name of the stage. Check result
                 _LOGGER.debug(f"in if")
                 hass.async_create_task(_check_result())
-                hass.async_create_task(_change_stage(int(order_id), int(precompleted_stage_id)))
+                hass.async_create_task(_change_stage(int(order_id), int(approve_stage_id)))
                 return True
 
         resp_sub = asyncio.ensure_future(subscribe_response_topic(topic, _subscribe_callback))
@@ -96,9 +97,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         :return: The order id.
         """
 
-        location_id = 2
+        location_id = 1
         todo = "some job"
-        worker_id = 6
+        worker_id = 1
         priority = "3"
         scheduled_date_start = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         scheduled_duration = 1.0
