@@ -70,6 +70,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         sensor_id = call.data["sensor_id"]
         _LOGGER.debug(f"Sensor id in handle create order: {sensor_id}")
 
+        async def _pubsub_async_callback(message: dict):
+            _LOGGER.debug(f"Got msg from topic: {message}")
+            id, stage_name = list(message.items())[0]
+            _LOGGER.debug(f"Order id: {id}")
+            _LOGGER.debug(f"Stage name: {stage_name}")
+            if (str(order_id) == str(id)) and (stage_name == "Completed"):
+                await _change_stage(int(order_id), int(onapprove_stage_id))
+                if _check_result(sensor_id):
+                    await _finalize_end_time(order_id)
+                    await _change_stage(int(order_id), int(approved_stage_id))
+                    await _create_invoice(order_id)
+                    return True
+
         def _pubsub_callback(obj, update_nr, subscription_id) -> bool:
             """PubSub subscription callback function to execute at new message arrival. Call function to check
             if the order is completed. If it is, change the order status to `pre-completed`.
@@ -82,16 +95,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             """
 
             message = parse_income_message(obj["params"]["result"]["data"])
-            _LOGGER.debug(f"Got msg from topic: {message}")
-            id, stage_name = list(message.items())[0]
-            _LOGGER.debug(f"Order id: {id}")
-            _LOGGER.debug(f"Stage name: {stage_name}")
-            if (str(order_id) == str(id)) and (stage_name == "Completed"):
-                hass.async_create_task(_change_stage(int(order_id), int(onapprove_stage_id)))
-                if _check_result(sensor_id):
-                    hass.async_create_task(_change_stage(int(order_id), int(approved_stage_id)))
-                    return True
-
+            task = hass.async_create_task(_pubsub_async_callback(message))
+            while True:
+                try:
+                    result = task.result()
+                    if result:
+                        return True
+                    else:
+                        break
+                except asyncio.InvalidStateError:
+                    pass
         resp_sub = asyncio.ensure_future(subscribe_response_topic(topic, _pubsub_callback))
 
     @to_thread
@@ -124,6 +137,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "name": f"{name} {timestamp}",
                     "scheduled_date_start": scheduled_date_start,
                     "scheduled_duration": scheduled_duration,
+                    "date_start": scheduled_date_start,
                 }
             ],
         )
@@ -147,6 +161,60 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug(f"Sensor state on Completed stage: {sensor_state}")
         time.sleep(10)
         return sensor_state == "off"
+
+    @to_thread
+    def _finalize_end_time(order_id: int) -> None:
+        date_end = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        connection.execute_kw(
+            entry.data[DB], uid, entry.data[PASSWORD], "fsm.order", "write", [[order_id], {"date_end": date_end}]
+        )
+        _LOGGER.debug(f"Actual end time for order {order_id} is updated")
+
+    @to_thread
+    def _create_invoice(order_id: int) -> None:
+        orders_data = connection.execute_kw(
+            entry.data[DB],
+            uid,
+            entry.data[PASSWORD],
+            "fsm.order",
+            "read",
+            [order_id],
+            {"fields": ["stage_id", "duration", "person_id"]},
+        )[0]
+        stage_id = orders_data["stage_id"][0]
+        if stage_id == approved_stage_id:
+            actual_duration = round(float(orders_data["duration"]), 2)
+            person_id = orders_data["person_id"][0] # to do: person id is not worker id
+            invoice_id = connection.execute_kw(
+                entry.data[DB],
+                uid,
+                entry.data[PASSWORD],
+                "account.move",
+                "create",
+                [
+                    (
+                        {
+                            "invoice_user_id": person_id,
+                            "name": "plumber plumberovich job",
+                            "move_type": "out_invoice",
+                            "invoice_date": str(datetime.today().date()),
+                            "line_ids": [
+                                (
+                                    0,
+                                    0,
+                                    {
+                                        "name": "Job",
+                                        "account_id": person_id,
+                                        "quantity": actual_duration,
+                                        "price_unit": 20,
+                                    },
+                                ),
+                            ],
+                        }
+                    )
+                ],
+            )
+            _LOGGER.debug(f"Create invoice with id: {invoice_id}")
 
     def _callback_state_change(event):
         """Callback for sensor's state changing. Calls `create_order` service.
