@@ -57,8 +57,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     :return: True after succesfull setting up
     """
     connection, uid = await connect_to_db(entry)
-    onapprove_stage_id = 4
-    approved_stage_id = 8
+    onapprove_stage_id = 5
+    approved_stage_id = 6
 
     async def handle_create_order(call: ServiceCall) -> None:
         """Callback for create_order service"""
