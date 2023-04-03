@@ -138,6 +138,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "scheduled_date_start": scheduled_date_start,
                     "scheduled_duration": scheduled_duration,
                     "date_start": scheduled_date_start,
+                    "description": "Columbia House"
                 }
             ],
         )
