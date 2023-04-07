@@ -5,7 +5,7 @@ import typing as tp
 import time
 import logging
 from datetime import datetime
-from .const import DOMAIN, CREATE_ORDERS_SERVICE, DB, HOST, PORT, USERNAME, PASSWORD
+from .const import DOMAIN, CREATE_ORDERS_SERVICE, DB, HOST, PORT, USERNAME, PASSWORD, ON_APPROVE_STAGE_ID, APPROVED_STAGE_ID
 from .pubsub import subscribe_response_topic, parse_income_message
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.typing import ConfigType
@@ -57,8 +57,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     :return: True after succesfull setting up
     """
     connection, uid = await connect_to_db(entry)
-    onapprove_stage_id = 5
-    approved_stage_id = 6
 
     async def handle_create_order(call: ServiceCall) -> None:
         """Callback for create_order service"""
@@ -76,10 +74,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug(f"Order id: {id}")
             _LOGGER.debug(f"Stage name: {stage_name}")
             if (str(order_id) == str(id)) and (stage_name == "Completed"):
-                await _change_stage(int(order_id), int(onapprove_stage_id))
+                await _change_stage(int(order_id), int(ON_APPROVE_STAGE_ID))
                 if _check_result(sensor_id):
                     await _finalize_end_time(order_id)
-                    await _change_stage(int(order_id), int(approved_stage_id))
+                    await _change_stage(int(order_id), int(APPROVED_STAGE_ID))
                     await _create_invoice(order_id)
                     return True
 
@@ -183,7 +181,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             {"fields": ["stage_id", "duration", "person_id"]},
         )[0]
         stage_id = orders_data["stage_id"][0]
-        if stage_id == approved_stage_id:
+        if stage_id == APPROVED_STAGE_ID:
             actual_duration = round(float(orders_data["duration"]), 2)
             person_id = orders_data["person_id"][0] # to do: person id is not worker id
             invoice_id = connection.execute_kw(

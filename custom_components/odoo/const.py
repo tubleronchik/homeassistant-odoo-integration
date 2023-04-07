@@ -8,3 +8,6 @@ PASSWORD = "user_password"
 CREATE_ORDERS_SERVICE = "create_orders"
 ROBONOMICS_NODE_MULTIADDR = "/dns/robonomics.rpc.multi-agent.io/tcp/44440"
 ROBONOMICS_NODE = "wss://robonomics.rpc.multi-agent.io"
+
+ON_APPROVE_STAGE_ID = 5 
+APPROVED_STAGE_ID = 6
