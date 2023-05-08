@@ -34,6 +34,7 @@ def connect_to_db(entry: ConfigEntry) -> tp.Optional[tuple]:
     if host[-1] == "/":
         host = host[:-1]
     url = f"{host}:{entry.data[PORT]}"
+    _LOGGER.info(url)
     try:
         common = xmlrpc.client.ServerProxy("{}/xmlrpc/2/common".format(url), allow_none=1)
         uid = common.authenticate(entry.data[DB], entry.data[USERNAME], entry.data[PASSWORD], {})
@@ -46,6 +47,7 @@ def connect_to_db(entry: ConfigEntry) -> tp.Optional[tuple]:
             return connection, uid
     except Exception as e:
         _LOGGER.error(f"Could not connect to the db with the error: {e}")
+    
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -57,15 +59,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     :return: True after succesfull setting up
     """
     connection, uid = await connect_to_db(entry)
+    @to_thread
+    def _search_location_id(location_name: str) -> int:
+        """Looking for a location id by the name of the house.
+        
+        :param location_name: Name of the house.
+        :return: The location id.
+        """
+
+        id = connection.execute_kw(entry.data[DB], uid, entry.data[PASSWORD], 'fsm.location', 'search', [[("name", "=", location_name)]])[0]
+        return id
+    
+    @to_thread
+    def _search_partner_id(house_name: str) -> int:
+        """Looking for a partner id by the name of the house. This id is used in `_create_invoice` function to 
+        add a `customer` field.
+        
+        :param house_name: Name of the house.
+        :return: The partner id.
+        """
+
+        id = connection.execute_kw(entry.data[DB], uid, entry.data[PASSWORD], 'res.partner', 'search', [[("name", "=", house_name)]])[0]
+        return id
+    house_name = entry.data[HOUSE]
+    location_id = await _search_location_id(house_name)
+    partner_id = await _search_partner_id(house_name)
 
     async def handle_create_order(call: ServiceCall) -> None:
         """Callback for create_order service"""
 
         name = call.data["name"]
-        house_name = entry.data[HOUSE]
-        location_id = await _search_location_id(house_name)
+        _LOGGER.debug(f"Name from service: {name}")
         sensor_id = call.data["sensor_id"]
-        order_id = await _create_order(name, location_id, sensor_id)
+        order_id = await _create_order(name, sensor_id)
         topic = f"{house_name}/{sensor_id}"
         _LOGGER.debug(f"Sensor id in handle create order: {sensor_id}")
 
@@ -107,12 +133,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         resp_sub = asyncio.ensure_future(subscribe_response_topic(topic, _pubsub_callback))
 
     @to_thread
-    def _search_location_id(location_name: str) -> int:
-        id = connection.execute_kw(entry.data[DB], uid, entry.data[PASSWORD], 'fsm.location', 'search', [[("name", "=", location_name)]])[0]
-        return id
-
-    @to_thread
-    def _create_order(name: str, location_id: int, sensor_id: str) -> int:
+    def _create_order(name: str, sensor_id: str) -> int:
         """Create order in Fieldservice addon in Odoo.
 
         :param name: Name of the order. Name of the sensor, which triggers the service.
@@ -184,12 +205,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "fsm.order",
             "read",
             [order_id],
-            {"fields": ["stage_id", "duration", "person_id"]},
+            {"fields": ["stage_id", "duration", "person_id", "eq_order"]},
         )[0]
         stage_id = orders_data["stage_id"][0]
+        equipment_ids = orders_data["eq_order"]
         if stage_id == APPROVED_STAGE_ID:
             actual_duration = round(float(orders_data["duration"]), 2)
             person_id = orders_data["person_id"][0] # to do: person id is not worker id
+            line_ids = [(
+                                    0,
+                                    0,
+                                    {
+                                        "name": "Job",
+                                        "account_id": person_id,
+                                        "quantity": actual_duration,
+                                        "price_unit": 20,
+                                    },
+                                )]
+            if equipment_ids:
+                equipment_lines = connection.execute_kw(entry.data[DB], uid, entry.data[PASSWORD], "fsm.order.with.equipment", "read",[equipment_ids], {"fields": ["equipment_name", "quantity_used"]})
+                for equipment in equipment_lines:
+                    product_id = connection.execute_kw(entry.data[DB], uid, entry.data[PASSWORD], 'product.template', 'search', [[("name", "=", equipment["equipment_name"])]])[0]
+                    line_with_eq = [(0, 0, {"product_id": product_id, "quantity": equipment["quantity_used"]})]
+                    line_ids = [*line_ids, *line_with_eq]
+
             invoice_id = connection.execute_kw(
                 entry.data[DB],
                 uid,
@@ -201,20 +240,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         {
                             "invoice_user_id": person_id,
                             "name": "plumber plumberovich job",
+                            "partner_id": partner_id,
                             "move_type": "out_invoice",
                             "invoice_date": str(datetime.today().date()),
-                            "line_ids": [
-                                (
-                                    0,
-                                    0,
-                                    {
-                                        "name": "Job",
-                                        "account_id": person_id,
-                                        "quantity": actual_duration,
-                                        "price_unit": 20,
-                                    },
-                                ),
-                            ],
+                            "line_ids": line_ids
                         }
                     )
                 ],
