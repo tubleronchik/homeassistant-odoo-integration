@@ -1,6 +1,6 @@
 import voluptuous as vol
 import typing as tp
-from .const import DB, HOST, PORT, USERNAME, PASSWORD, DOMAIN
+from .const import DB, HOST, PORT, USERNAME, PASSWORD, DOMAIN, HOUSE
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
@@ -14,6 +14,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(PORT, default=443): int,
         vol.Required(USERNAME): str,
         vol.Required(PASSWORD): str,
+        vol.Required(HOUSE): str
     }
 )
 

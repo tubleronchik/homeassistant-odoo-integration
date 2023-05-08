@@ -7,7 +7,8 @@
                     "odoo_host": "Odoo host",
                     "odoo_port": "Odoo port",
                     "odoo_username": "Oddo user's name",
-                    "user_password": "Odoo user's password or API key"
+                    "user_password": "Odoo user's password or API key",
+                    "house_name": "Name of the house"
                 },
                 "description": "Please enter your Odoo credentials."
             }

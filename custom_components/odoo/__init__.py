@@ -5,7 +5,7 @@ import typing as tp
 import time
 import logging
 from datetime import datetime
-from .const import DOMAIN, CREATE_ORDERS_SERVICE, DB, HOST, PORT, USERNAME, PASSWORD, ON_APPROVE_STAGE_ID, APPROVED_STAGE_ID
+from .const import DOMAIN, CREATE_ORDERS_SERVICE, DB, HOST, PORT, USERNAME, PASSWORD, ON_APPROVE_STAGE_ID, APPROVED_STAGE_ID, HOUSE
 from .pubsub import subscribe_response_topic, parse_income_message
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.typing import ConfigType
@@ -62,10 +62,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Callback for create_order service"""
 
         name = call.data["name"]
-        _LOGGER.debug(f"Name from service: {name}")
-        order_id = await _create_order(name)
-        topic = f"odoo_change_order_stage_{order_id}"
+        house_name = entry.data[HOUSE]
+        location_id = await _search_location_id(house_name)
         sensor_id = call.data["sensor_id"]
+        order_id = await _create_order(name, location_id, sensor_id)
+        topic = f"{house_name}/{sensor_id}"
         _LOGGER.debug(f"Sensor id in handle create order: {sensor_id}")
 
         async def _pubsub_async_callback(message: dict):
@@ -106,14 +107,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         resp_sub = asyncio.ensure_future(subscribe_response_topic(topic, _pubsub_callback))
 
     @to_thread
-    def _create_order(name: str) -> int:
+    def _search_location_id(location_name: str) -> int:
+        id = connection.execute_kw(entry.data[DB], uid, entry.data[PASSWORD], 'fsm.location', 'search', [[("name", "=", location_name)]])[0]
+        return id
+
+    @to_thread
+    def _create_order(name: str, location_id: int, sensor_id: str) -> int:
         """Create order in Fieldservice addon in Odoo.
 
         :param name: Name of the order. Name of the sensor, which triggers the service.
         :return: The order id.
         """
 
-        location_id = 1
         timestamp = time.strftime("%d.%m.%Y, %H:%M", time.localtime())
         todo = "some job"
         worker_id = 1
@@ -136,7 +141,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "scheduled_date_start": scheduled_date_start,
                     "scheduled_duration": scheduled_duration,
                     "date_start": scheduled_date_start,
-                    "description": "Columbia House"
+                    "description": "Columbia House",
+                    "sensor_id": sensor_id
                 }
             ],
         )
@@ -242,8 +248,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for entity in entity_registry.entities:
         entity_data = entity_registry.async_get(entity)
         id = entity_data.entity_id
-        # _LOGGER.debug(f"device class: {entity_registry.entities[id]}")
-        #  _LOGGER.debug(f"device class: {entity_registry.entities[id].device_class}")
         entity_state = hass.states.get(entity)
         if entity_state != None:
             try:
